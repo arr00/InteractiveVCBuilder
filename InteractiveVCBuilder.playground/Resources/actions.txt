@@ -1,0 +1,2 @@
+animation=[tag:100,duration:3,toX:200,toY:200,actionTag:1,onCompletion:2]
+animation=[tag:100,duration:2,toX:100,toY:200,actionTag:2]
