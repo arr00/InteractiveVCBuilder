@@ -77,7 +77,8 @@ public class VCBuilder {
                     }
                     
                 case "imageview":
-                    let imageView = UIImageView(frame: rect)
+                    let imageView = buildImageViewWithData(rect: rect, data:dictionary)
+                    
                     viewController.view.addSubview(imageView)
                 case "textlabel":
                     let label = UILabel(frame: rect)
@@ -114,6 +115,30 @@ public class VCBuilder {
         // * textcentering
         // * font
         return UILabel()
+    }
+    
+    // Required:
+    // * imageUrl
+    private static func buildImageViewWithData(rect:CGRect, data:[String:String]) -> UIImageView {
+        let imageView = UIImageView(frame: rect)
+        let urlString = data["imageUrl"]!
+        let url = URL(string: urlString)!
+        let task = URLSession.shared.dataTask(with: url) { (data, response, error) in
+            
+            guard let data = data else {
+                print("Data is nill")
+                return
+            }
+            let image = UIImage(data: data)!
+            DispatchQueue.main.async {
+                imageView.image = image
+            }
+        }
+        
+        task.resume()
+        
+        
+        return imageView
     }
     
     private static func buildButtonWithData(rect:CGRect, data:[String:String]) throws -> UIButton {
@@ -160,7 +185,7 @@ public class VCBuilder {
 
 public class AnimationRunner {
     private var processedActions = [Int:() -> ()]()
-    public static let validAnimations = ["moveAnimation","opacityAnimation","jointAction"]
+    public static let validAnimations = ["moveAnimation","opacityAnimation","jointAction","removeAction","buttonTriggerAction"]
     
     public func runActionsOn(vc:UIViewController,text:String) throws {
         let actions = text.components(separatedBy: "\n")
@@ -201,6 +226,17 @@ public class AnimationRunner {
                     catch {
                         print("error building joint action")
                     }
+                case "removeAction":
+                    do {
+                        let action = try buildRemoveAction(data:dictionary,vc:vc)
+                        processedActions[Int(dictionary["actionTag"]!)!] = action
+                    }
+                    catch {
+                        print("Error building remove action")
+                    }
+                case "buttonTriggerAction":
+                    buildButtonTriggerAction(data:dictionary,vc:vc)
+                    //Returns nil since it is just tethering an existing action to a button
                 default:
                     print("Invalid action")
                 }
@@ -213,7 +249,7 @@ public class AnimationRunner {
     
     // MARK - ACTION CREATION
     
-    func buildMoveAnimationWithData(data:[String:String],vc:UIViewController) -> (() -> ()) {
+    private func buildMoveAnimationWithData(data:[String:String],vc:UIViewController) -> (() -> ()) {
         let animation = {
             let itemOfInterest = vc.view.viewWithTag(Int(data["tag"]!)!)!
             UIView.animate(withDuration: Double(data["duration"]!)!, animations: {
@@ -227,6 +263,18 @@ public class AnimationRunner {
         return animation
     }
     
+    // Require:
+    // * actionTag
+    // * elementTag (must be a button)
+    // * targetActionTag
+    private func buildButtonTriggerAction(data:[String:String],vc:UIViewController) {
+        let button = vc.view.viewWithTag(Int(data["elementTag"]!)!) as! UIButton
+        button.addTargetClosure(closure: { (button) in
+            print("Running action")
+            self.processedActions[Int(data["targetActionTag"]!)!]!()
+        })
+    }
+    
     
     // Require:
     // * actionTag
@@ -235,7 +283,7 @@ public class AnimationRunner {
     // * duration
     // Optional:
     // * onCompletion
-    func buildOpacityAnimationWithData(data:[String:String],vc:UIViewController) -> () -> () {
+    private func buildOpacityAnimationWithData(data:[String:String],vc:UIViewController) -> () -> () {
         let animation = {
             let element = vc.view.viewWithTag(Int(data["elementTag"]!)!)!
             UIView.animate(withDuration: Double(data["duration"]!)!, animations: {
@@ -255,7 +303,7 @@ public class AnimationRunner {
     // * tags (array of tags to run asyncronously) in the format [12,1,5,1,51]
     // * actionTag
     // * NO individual on completion. Must use on completion of child actions
-    func buildJointAction(data:[String:String]) throws -> () -> () {
+    private func buildJointAction(data:[String:String]) throws -> () -> () {
         do {
             let arrayOfTags = try data["tags"]!.buildArray()
             let animation = {
@@ -269,6 +317,18 @@ public class AnimationRunner {
         catch {
             throw ActionBuildingError.ErrorBuildingAction
         }
+    }
+    
+    private func buildRemoveAction(data:[String:String],vc:UIViewController) throws -> () -> () {
+        guard let itemOfInterest = vc.view.viewWithTag(Int(data["elementTag"]!)!) else {
+            throw ActionBuildingError.ErrorBuildingAction
+        }
+        
+        let action = {
+            itemOfInterest.removeFromSuperview()
+        }
+        
+        return action
     }
     
 }
@@ -350,7 +410,15 @@ extension String {
         let dataEntries = contentString.components(separatedBy: ",")
         for dataEntry in dataEntries {
             let keyAndValue =  dataEntry.components(separatedBy: ":")
-            result[keyAndValue[0]] = keyAndValue[1]
+            //Value is the rest
+            var value = keyAndValue[1]
+            if keyAndValue.count > 2 {
+                for i in 2..<keyAndValue.count {
+                    value += ":"
+                    value += keyAndValue[i]
+                }
+            }
+            result[keyAndValue[0]] = value
         }
         
         return result
@@ -397,6 +465,45 @@ catch (let error) {
     
 }
 
+
+
+
+typealias UIButtonTargetClosure = (UIButton) -> ()
+
+class ClosureWrapper: NSObject {
+    let closure: UIButtonTargetClosure
+    init(_ closure: @escaping UIButtonTargetClosure) {
+        self.closure = closure
+    }
+}
+
+extension UIButton {
+    
+    private struct AssociatedKeys {
+        static var targetClosure = "targetClosure"
+    }
+    
+    private var targetClosure: UIButtonTargetClosure? {
+        get {
+            guard let closureWrapper = objc_getAssociatedObject(self, &AssociatedKeys.targetClosure) as? ClosureWrapper else { return nil }
+            return closureWrapper.closure
+        }
+        set(newValue) {
+            guard let newValue = newValue else { return }
+            objc_setAssociatedObject(self, &AssociatedKeys.targetClosure, ClosureWrapper(newValue), objc_AssociationPolicy.OBJC_ASSOCIATION_RETAIN_NONATOMIC)
+        }
+    }
+    
+    func addTargetClosure(closure: @escaping UIButtonTargetClosure) {
+        targetClosure = closure
+        addTarget(self, action: #selector(UIButton.closureAction), for: .touchUpInside)
+    }
+    
+    @objc func closureAction() {
+        guard let targetClosure = targetClosure else { return }
+        targetClosure(self)
+    }
+}
 
 
 
