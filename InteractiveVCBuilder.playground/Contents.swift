@@ -21,214 +21,223 @@ import PlaygroundSupport
 // * actions may be saved as variables and passed into other actions only AFTER they are defined.
 // * each action occupies one line of the file
 
-
-var processedActions = [Int:() -> ()]()
-func runActionsOn(vc:UIViewController,text:String) throws {
-    let actions = text.components(separatedBy: "\n")
+public class VCBuilder {
     
-    
-    // Type of actions
-    // * animation
-    // ** specify tag, destination, duration, curve
-    
-    
-    // All actions MUST specify an animationTag
-    // All actions have an optional on completion tag
-    // In general, animations are run asyncrously
-    
-    let validAnimations = ["animation"]
-    
-    for action in actions {
-        let value = action.components(separatedBy: "=")
-        
-        if validAnimations.contains(value[0]) {
-            let input = value[1]
-            guard let dictionary = try? input.buildDictionary() else {
-                throw VCBuildingError.InvalidDictionaryFormat(message: "Issue building dictionary from input")
-            }
-            
-            switch(value[0]) {
-            case "animation":
-                let action  = buildAnimationWithData(data:dictionary,vc:vc)
-                processedActions[Int(dictionary["actionTag"]!)!] = action
-            default:
-                print("Invalid action")
-            }
-        }
-    }
-    
-    print("Running actions")
-    let actionToRun = processedActions[1]!
-    print("running action")
-    processedActions[1]!()
-}
-
-
-// MARK - ACTION CREATION
-
-func buildAnimationWithData(data:[String:String],vc:UIViewController) -> (() -> ()) {
-    let animation = {
-        let itemOfInterest = vc.view.viewWithTag(Int(data["tag"]!)!)!
-        UIView.animate(withDuration: Double(data["duration"]!)!, animations: {
-            itemOfInterest.center = CGPoint(x: Double(data["toX"]!)!, y: Double(data["toY"]!)!)
-        }, completion: { (success) in
-            if(data["onCompletion"] != nil) {
-                processedActions[Int(data["onCompletion"]!)!]!()
-                
-            }
-        })
-    }
-    return animation
-}
-
-
-
-func buildVC(text:String) throws -> UIViewController  {
-    var validClasses = ["button","imageview","textlabel","slider"]
-
-    
-    
-    let viewController = UIViewController()
-    viewController.view.backgroundColor = UIColor.white
-    let items = text.components(separatedBy: "\n")
-    
-    for item in items {
-        let values = item.components(separatedBy: "=")
-        var standardized = [String]()
-        for value in values {
-            standardized.append(value.trimmingCharacters(in: .whitespaces).lowercased())
-        }
+    public static let validClasses = ["button","imageview","textlabel","slider"]
+    public static func buildVC(text:String) throws -> UIViewController  {
         
         
         
-        // Check first value for class
-        if validClasses.contains(standardized[0]) {
-            let input = values[1]
-            // extract dictionary from standardized[1]
-            guard let dictionary = try? input.buildDictionary() else {
-                throw VCBuildingError.InvalidDictionaryFormat(message: "Issue building dictionary from input")
+        
+        let viewController = UIViewController()
+        viewController.view.backgroundColor = UIColor.white
+        let items = text.components(separatedBy: "\n")
+        
+        for item in items {
+            let values = item.components(separatedBy: "=")
+            var standardized = [String]()
+            for value in values {
+                standardized.append(value.trimmingCharacters(in: .whitespaces).lowercased())
             }
             
             
             
-            // Extract next four values for rect data. Always the same
-            if dictionary.count < 5 {
-                throw VCBuildingError.MissingEntries
-            }
-            
-            
-            let x = dictionary["x"]!.CGFloatValue() ?? 0
-            let y = dictionary["y"]!.CGFloatValue() ?? 0
-            let width = dictionary["width"]!.CGFloatValue() ?? 0
-            let height = dictionary["height"]!.CGFloatValue() ?? 0
-            let rect = CGRect(x: x, y: y, width: width, height: height)
-            
-            
-            switch (standardized[0]) {
-            case "button":
-                do {
-                    let button = try buildButtonWithData(rect: rect, data: dictionary)
-                    viewController.view.addSubview(button)
-                    print("Added button succesfully")
-                }
-                catch {
-                    print("error building button")
+            // Check first value for class
+            if VCBuilder.validClasses.contains(standardized[0]) {
+                let input = values[1]
+                // extract dictionary from standardized[1]
+                guard let dictionary = try? input.buildDictionary() else {
+                    throw VCBuildingError.InvalidDictionaryFormat(message: "Issue building dictionary from input")
                 }
                 
-            case "imageview":
-                let imageView = UIImageView(frame: rect)
-                viewController.view.addSubview(imageView)
-            case "textlabel":
-                let label = UILabel(frame: rect)
-                viewController.view.addSubview(label)
-            case "slider":
-                let slider = UISlider(frame: rect)
-                viewController.view.addSubview(slider)
-            default:
-                print("Add nothing")
+                
+                
+                // Extract next four values for rect data. Always the same
+                if dictionary.count < 5 {
+                    throw VCBuildingError.MissingEntries
+                }
+                
+                
+                let x = dictionary["x"]!.CGFloatValue() ?? 0
+                let y = dictionary["y"]!.CGFloatValue() ?? 0
+                let width = dictionary["width"]!.CGFloatValue() ?? 0
+                let height = dictionary["height"]!.CGFloatValue() ?? 0
+                let rect = CGRect(x: x, y: y, width: width, height: height)
+                
+                
+                switch (standardized[0]) {
+                case "button":
+                    do {
+                        let button = try buildButtonWithData(rect: rect, data: dictionary)
+                        viewController.view.addSubview(button)
+                        print("Added button succesfully")
+                    }
+                    catch {
+                        print("error building button")
+                    }
+                    
+                case "imageview":
+                    let imageView = UIImageView(frame: rect)
+                    viewController.view.addSubview(imageView)
+                case "textlabel":
+                    let label = UILabel(frame: rect)
+                    viewController.view.addSubview(label)
+                case "slider":
+                    let slider = UISlider(frame: rect)
+                    viewController.view.addSubview(slider)
+                default:
+                    print("Add nothing")
+                }
             }
-        }
-        else {
-            print("Invalid class")
-            if (standardized[0] != "") {
-                throw VCBuildingError.InvalidClass
+            else {
+                print("Invalid class")
+                if (standardized[0] != "") {
+                    throw VCBuildingError.InvalidClass
+                }
             }
+            
         }
         
+        
+        return viewController
     }
     
+    // MARK - Element Creation
     
-    return viewController
+    private static func buildTextLabelWithData(rect: CGRect, data: [String:String]) throws -> UILabel {
+        // Data
+        // required:
+        // * text
+        // optional
+        // * textcolor
+        // * backgroundcolor
+        // * textcentering
+        // * font
+        return UILabel()
+    }
+    
+    private static func buildButtonWithData(rect:CGRect, data:[String:String]) throws -> UIButton {
+        // Data
+        // required:
+        // * color
+        // * tag
+        // optional:
+        // * titleTextColor
+        // * title
+        /*var standardized = [String]()
+         for dataPoint in data {
+         standardized.append(dataPoint.trimmingCharacters(in: .whitespaces).trimmingCharacters(in: .newlines))
+         }*/
+        
+        if(data.count < 7) {
+            throw ButtonBuildingError.MissingEntries
+        }
+        
+        let button = UIButton(frame: rect)
+        print(data["title"]!)
+        
+        button.backgroundColor = data["color"]!.colorValue() ?? .clear
+        button.tag = Int(data["tag"]!) ?? -1
+        
+        
+        
+        
+        
+        // Set optional values
+        if data.keys.contains("titleTextColor") {
+            button.setTitleColor(data["titleTextColor"]!.colorValue() ?? .black, for: .normal)
+        }
+        
+        if data.keys.contains("title") {
+            button.setTitle(data["title"]!, for: .normal)
+        }
+        
+        
+        
+        return button
+    }
 }
 
-// MARK - Element Creation
-
-func buildTextLabelWithData(rect: CGRect, data: [String:String]) throws -> UILabel {
-    // Data
-    // required:
-    // * text
-    // optional
-    // * textcolor
-    // * backgroundcolor
-    // * textcentering
-    // * font
-    return UILabel()
+public class AnimationRunner {
+    private var processedActions = [Int:() -> ()]()
+    public static let validAnimations = ["animation"]
+    
+    public func runActionsOn(vc:UIViewController,text:String) throws {
+        let actions = text.components(separatedBy: "\n")
+        
+        
+        // Type of actions
+        // * animation
+        // ** specify tag, destination, duration, curve
+        
+        
+        // All actions MUST specify an animationTag
+        // All actions have an optional on completion tag
+        // In general, animations are run asyncrously
+        
+        
+        
+        for action in actions {
+            let value = action.components(separatedBy: "=")
+            
+            if AnimationRunner.validAnimations.contains(value[0]) {
+                let input = value[1]
+                guard let dictionary = try? input.buildDictionary() else {
+                    throw VCBuildingError.InvalidDictionaryFormat(message: "Issue building dictionary from input")
+                }
+                
+                switch(value[0]) {
+                case "animation":
+                    let action  = buildAnimationWithData(data:dictionary,vc:vc)
+                    processedActions[Int(dictionary["actionTag"]!)!] = action
+                default:
+                    print("Invalid action")
+                }
+            }
+        }
+        print("running action")
+        processedActions[1]!()
+    }
+    
+    
+    // MARK - ACTION CREATION
+    
+    func buildAnimationWithData(data:[String:String],vc:UIViewController) -> (() -> ()) {
+        let animation = {
+            let itemOfInterest = vc.view.viewWithTag(Int(data["tag"]!)!)!
+            UIView.animate(withDuration: Double(data["duration"]!)!, animations: {
+                itemOfInterest.center = CGPoint(x: Double(data["toX"]!)!, y: Double(data["toY"]!)!)
+            }, completion: { (success) in
+                if(data["onCompletion"] != nil) {
+                    self.processedActions[Int(data["onCompletion"]!)!]!()
+                }
+            })
+        }
+        return animation
+    }
+    
 }
 
-func buildButtonWithData(rect:CGRect, data:[String:String]) throws -> UIButton {
-    // Data
-    // required:
-    // * color
-    // * tag
-    // optional:
-    // * titleTextColor
-    // * title
-    /*var standardized = [String]()
-    for dataPoint in data {
-        standardized.append(dataPoint.trimmingCharacters(in: .whitespaces).trimmingCharacters(in: .newlines))
-    }*/
-    
-    if(data.count < 7) {
-        throw ButtonBuildingError.MissingEntries
-    }
-    
-    let button = UIButton(frame: rect)
-    print(data["title"]!)
-    
-    button.backgroundColor = data["color"]!.colorValue() ?? .clear
-    button.tag = Int(data["tag"]!) ?? -1
-    
-    
-    
-    
-    
-    // Set optional values
-    if data.keys.contains("titleTextColor") {
-        button.setTitleColor(data["titleTextColor"]!.colorValue() ?? .black, for: .normal)
-    }
-    
-    if data.keys.contains("title") {
-        button.setTitle(data["title"]!, for: .normal)
-    }
-    
-    
-    
-    return button
-}
 
-
-enum VCBuildingError:Error {
+public enum VCBuildingError:Error {
     case InvalidClass
     case MissingEntries
     case InvalidDictionaryFormat(message:String?)
 }
-enum ButtonBuildingError:Error {
+public enum ButtonBuildingError:Error {
     case MissingEntries
 }
-enum DictionaryBuildingError:Error {
+public enum DictionaryBuildingError:Error {
     case InvalidFormat
     case EmptyString
 }
+
+
+
+
+
+
+
 
 
 // MARK - Extensions
@@ -294,9 +303,10 @@ do {
     let text = try String(contentsOf: url)
     let actionText = try String(contentsOf: actionsUrl)
     
-    let vc = try buildVC(text: text)
+    let vc = try VCBuilder.buildVC(text: text)
     
-    try runActionsOn(vc: vc, text: actionText)
+    let actionRunner = AnimationRunner()
+    try actionRunner.runActionsOn(vc: vc, text: actionText)
     
     PlaygroundPage.current.liveView = vc
     
