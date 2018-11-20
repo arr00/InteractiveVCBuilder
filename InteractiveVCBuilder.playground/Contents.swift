@@ -160,7 +160,7 @@ public class VCBuilder {
 
 public class AnimationRunner {
     private var processedActions = [Int:() -> ()]()
-    public static let validAnimations = ["animation"]
+    public static let validAnimations = ["moveAnimation","opacityAnimation","jointAction"]
     
     public func runActionsOn(vc:UIViewController,text:String) throws {
         let actions = text.components(separatedBy: "\n")
@@ -172,7 +172,7 @@ public class AnimationRunner {
         
         
         // All actions MUST specify an animationTag
-        // All actions have an optional on completion tag
+        // All actions have an optional onCompletion tag
         // In general, animations are run asyncrously
         
         
@@ -187,9 +187,20 @@ public class AnimationRunner {
                 }
                 
                 switch(value[0]) {
-                case "animation":
-                    let action  = buildAnimationWithData(data:dictionary,vc:vc)
+                case "moveAnimation":
+                    let action  = buildMoveAnimationWithData(data:dictionary,vc:vc)
                     processedActions[Int(dictionary["actionTag"]!)!] = action
+                case "opacityAnimation":
+                    let action = buildOpacityAnimationWithData(data:dictionary,vc:vc)
+                    processedActions[Int(dictionary["actionTag"]!)!] = action
+                case "jointAction":
+                    do {
+                        let action = try buildJointAction(data: dictionary)
+                        processedActions[Int(dictionary["actionTag"]!)!] = action
+                    }
+                    catch {
+                        print("error building joint action")
+                    }
                 default:
                     print("Invalid action")
                 }
@@ -202,7 +213,7 @@ public class AnimationRunner {
     
     // MARK - ACTION CREATION
     
-    func buildAnimationWithData(data:[String:String],vc:UIViewController) -> (() -> ()) {
+    func buildMoveAnimationWithData(data:[String:String],vc:UIViewController) -> (() -> ()) {
         let animation = {
             let itemOfInterest = vc.view.viewWithTag(Int(data["tag"]!)!)!
             UIView.animate(withDuration: Double(data["duration"]!)!, animations: {
@@ -214,6 +225,50 @@ public class AnimationRunner {
             })
         }
         return animation
+    }
+    
+    
+    // Require:
+    // * actionTag
+    // * elementTag
+    // * targetOpacity
+    // * duration
+    // Optional:
+    // * onCompletion
+    func buildOpacityAnimationWithData(data:[String:String],vc:UIViewController) -> () -> () {
+        let animation = {
+            let element = vc.view.viewWithTag(Int(data["elementTag"]!)!)!
+            UIView.animate(withDuration: Double(data["duration"]!)!, animations: {
+                element.alpha = NumberFormatter().number(from: data["targetOpacity"]!) as! CGFloat
+                
+            }, completion: { (success) in
+                if(data.keys.contains("onCompletion")) {
+                    self.processedActions[Int(data["onCompletion"]!)!]!()
+                }
+            })
+        }
+        return animation
+    }
+    
+    
+    // Require:
+    // * tags (array of tags to run asyncronously) in the format [12,1,5,1,51]
+    // * actionTag
+    // * NO individual on completion. Must use on completion of child actions
+    func buildJointAction(data:[String:String]) throws -> () -> () {
+        do {
+            let arrayOfTags = try data["tags"]!.buildArray()
+            let animation = {
+                for tag in arrayOfTags {
+                    let action = self.processedActions[Int(tag)!]!
+                    action()
+                }
+            }
+            return animation
+        }
+        catch {
+            throw ActionBuildingError.ErrorBuildingAction
+        }
     }
     
 }
@@ -231,6 +286,15 @@ public enum DictionaryBuildingError:Error {
     case InvalidFormat
     case EmptyString
 }
+public enum ArrayBuildingError:Error {
+    case InvalidFormat
+    case EmptyString
+}
+
+public enum ActionBuildingError:Error {
+    case ErrorBuildingAction
+}
+
 
 
 
@@ -291,6 +355,22 @@ extension String {
         
         return result
         
+    }
+    
+    public func buildArray() throws -> [String] {
+        if self.isEmpty {
+            throw ArrayBuildingError.EmptyString
+        }
+        if self.first! != "[" || self.last! != "]" {
+            throw DictionaryBuildingError.InvalidFormat
+        }
+        
+        var contentString = self
+        contentString.removeLast()
+        contentString.removeFirst()
+        
+        let result = contentString.components(separatedBy: "-")
+        return result
     }
 }
 
