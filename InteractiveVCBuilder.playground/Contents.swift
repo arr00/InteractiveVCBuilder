@@ -23,7 +23,7 @@ import PlaygroundSupport
 
 public class VCBuilder {
     
-    public static let validClasses = ["button","imageview","textlabel","slider"]
+    public static let validClasses = ["button","imageview","textlabel","slider","experation"]
     public static func buildVC(text:String) throws -> UIViewController  {
         
         
@@ -31,7 +31,34 @@ public class VCBuilder {
         
         let viewController = UIViewController()
         viewController.view.backgroundColor = UIColor.white
-        let items = text.components(separatedBy: "\n")
+        var items = text.components(separatedBy: "\n")
+        
+        // CHECK FOR EXPERATION
+        if items.contains(where: { (str) -> Bool in
+            return str.lowercased().hasPrefix("experation")
+        }) {
+            let indexOfExperation = items.index { (str) -> Bool in
+                return str.lowercased().hasPrefix("experation")
+            }
+            let experationInfo = items[indexOfExperation!]
+            let values = experationInfo.components(separatedBy: "=")
+            let epochExp = TimeInterval(values[1])!
+            if(Date().timeIntervalSince1970 > epochExp) {
+                // EXPIRED
+                let expiredVC = UIViewController()
+                expiredVC.title = "EXPIRED"
+                let label = UILabel(frame: CGRect(x: 0, y: 0, width: UIScreen.main.bounds.width, height: UIScreen.main.bounds.height))
+                label.text = "EXPIRED"
+                label.font = UIFont.systemFont(ofSize: 20)
+                expiredVC.view.addSubview(label)
+                expiredVC.view.backgroundColor = UIColor.white
+                return expiredVC
+            }
+            else {
+                // NOT EXPIRED
+                items.remove(at: indexOfExperation!)
+            }
+        }
         
         for item in items {
             let values = item.components(separatedBy: "=")
@@ -57,11 +84,38 @@ public class VCBuilder {
                     throw VCBuildingError.MissingEntries
                 }
                 
+                var x:CGFloat = 0.0
+                if dictionary["x"]!.contains("%") {
+                    x = percentToPixelsHorizontal(percent: dictionary["x"]!)
+                }
+                else {
+                    x = dictionary["x"]!.CGFloatValue() ?? 0
+                }
                 
-                let x = dictionary["x"]!.CGFloatValue() ?? 0
-                let y = dictionary["y"]!.CGFloatValue() ?? 0
-                let width = dictionary["width"]!.CGFloatValue() ?? 0
-                let height = dictionary["height"]!.CGFloatValue() ?? 0
+                var y:CGFloat = 0.0
+                if dictionary["y"]!.contains("%") {
+                    y = percentToPixelsVertical(percent: dictionary["y"]!)
+                }
+                else {
+                    y = dictionary["y"]!.CGFloatValue() ?? 0
+                }
+                
+                var width:CGFloat = 0.0
+                if dictionary["width"]!.contains("%") {
+                    width = percentToPixelsHorizontal(percent: dictionary["width"]!)
+                }
+                else {
+                    width = dictionary["width"]!.CGFloatValue() ?? 0
+                }
+                
+                var height:CGFloat = 0.0
+                if dictionary["height"]!.contains("%") {
+                    height = percentToPixelsVertical(percent: dictionary["height"]!)
+                }
+                else {
+                    height = dictionary["height"]!.CGFloatValue() ?? 0
+                }
+                
                 let rect = CGRect(x: x, y: y, width: width, height: height)
                 
                 
@@ -101,6 +155,19 @@ public class VCBuilder {
         
         
         return viewController
+    }
+    
+    public static func percentToPixelsVertical(percent:String) -> CGFloat {
+        let changed = percent.replacingOccurrences(of: "%", with: "")
+        let percentValue = CGFloat(Double(changed)!)/100
+        let temp = UIViewController()
+        return 660 * percentValue
+    }
+    public static func percentToPixelsHorizontal(percent:String) -> CGFloat {
+        let changed = percent.replacingOccurrences(of: "%", with: "")
+        let percentValue = CGFloat(Double(changed)!)/100
+        let temp = UIViewController()
+        return 375 * percentValue
     }
     
     // MARK - Element Creation
@@ -185,7 +252,7 @@ public class VCBuilder {
 
 public class AnimationRunner {
     private var processedActions = [Int:() -> ()]()
-    public static let validAnimations = ["moveAnimation","opacityAnimation","jointAction","removeAction","buttonTriggerAction"]
+    public static let validAnimations = ["moveAnimation","opacityAnimation","jointAction","removeAction","buttonTriggerAction","rotateAnimation"]
     
     public func runActionsOn(vc:UIViewController,text:String) throws {
         let actions = text.components(separatedBy: "\n")
@@ -210,10 +277,16 @@ public class AnimationRunner {
                 guard let dictionary = try? input.buildDictionary() else {
                     throw VCBuildingError.InvalidDictionaryFormat(message: "Issue building dictionary from input")
                 }
+                print(value[0])
                 
                 switch(value[0]) {
                 case "moveAnimation":
                     let action  = buildMoveAnimationWithData(data:dictionary,vc:vc)
+                    processedActions[Int(dictionary["actionTag"]!)!] = action
+                case "rotateAnimation":
+                    print("Building rotation animation")
+                    let action = buildRotateAnimationWithData(data: dictionary, vc: vc)
+                    
                     processedActions[Int(dictionary["actionTag"]!)!] = action
                 case "opacityAnimation":
                     let action = buildOpacityAnimationWithData(data:dictionary,vc:vc)
@@ -249,11 +322,59 @@ public class AnimationRunner {
     
     // MARK - ACTION CREATION
     
+    
+    // * actionTag
+    // * elementTag
+    // * duration
+    // * toX
+    // * toY
+    // * optional onCompletion
     private func buildMoveAnimationWithData(data:[String:String],vc:UIViewController) -> (() -> ()) {
         let animation = {
-            let itemOfInterest = vc.view.viewWithTag(Int(data["tag"]!)!)!
+            let itemOfInterest = vc.view.viewWithTag(Int(data["elementTag"]!)!)!
+            UIView.animate(withDuration: Double(data["duration"]!)!, delay: 0, options: [UIViewAnimationOptions.curveLinear], animations: {
+                var x:CGFloat = 0.0
+                if data["toX"]!.contains("%") {
+                    x = VCBuilder.percentToPixelsHorizontal(percent: data["toX"]!)
+                } else {
+                    x = CGFloat(Double(data["toX"]!)!)
+                }
+                var y:CGFloat = 0.0
+                if data["toY"]!.contains("%") {
+                    y = VCBuilder.percentToPixelsVertical(percent: data["toY"]!)
+                }
+                else {
+                    y = CGFloat(Double(data["toY"]!)!)
+                }
+                itemOfInterest.center = CGPoint(x:x, y: y)
+            }, completion: { (success) in
+                if(data["onCompletion"] != nil) {
+                    self.processedActions[Int(data["onCompletion"]!)!]!()
+                }
+            })
+            /*
             UIView.animate(withDuration: Double(data["duration"]!)!, animations: {
                 itemOfInterest.center = CGPoint(x: Double(data["toX"]!)!, y: Double(data["toY"]!)!)
+            }, completion: { (success) in
+                if(data["onCompletion"] != nil) {
+                    self.processedActions[Int(data["onCompletion"]!)!]!()
+                }
+            })*/
+        }
+        return animation
+    }
+    
+    
+    // Require:
+    // * actionTag
+    // * elementTag
+    // * duration
+    // * angle in radians
+    private func buildRotateAnimationWithData(data:[String:String],vc:UIViewController) -> (() -> ()) {
+        let animation = {
+            let itemOfInterest = vc.view.viewWithTag(Int(data["elementTag"]!)!)!
+            UIView.animate(withDuration: Double(data["duration"]!)!, animations: {
+                itemOfInterest.transform = CGAffineTransform(rotationAngle: CGFloat(Double(data["angle"]!)!))
             }, completion: { (success) in
                 if(data["onCompletion"] != nil) {
                     self.processedActions[Int(data["onCompletion"]!)!]!()
@@ -262,6 +383,7 @@ public class AnimationRunner {
         }
         return animation
     }
+    
     
     // Require:
     // * actionTag
@@ -453,8 +575,12 @@ do {
     
     let vc = try VCBuilder.buildVC(text: text)
     
-    let actionRunner = AnimationRunner()
-    try actionRunner.runActionsOn(vc: vc, text: actionText)
+    
+    if vc.title != "EXPIRED" {
+        let actionRunner = AnimationRunner()
+        try actionRunner.runActionsOn(vc: vc, text: actionText)
+    }
+    
     
     PlaygroundPage.current.liveView = vc
     
