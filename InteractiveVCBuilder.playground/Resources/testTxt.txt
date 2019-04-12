@@ -1,4 +1,4 @@
 Button=[x:80%,y:0,width:100,height:100,title:Hello!,color:red,tag:100,titleTextColor:blue]
 Button=[x:100,y:100,width:100,height:100,title:Hello!,color:green,tag:101,titleTextColor:orange]
-ImageView=[x:0,y:0,width:100%,height:100%,imageUrl:http://aryehgreenberg.com/images/avatar.jpg]
+ImageView=[x:0,y:0,width:10%,height:10%,imageUrl:http://aryehgreenberg.com/images/avatar.jpg]
 experation=2054400069

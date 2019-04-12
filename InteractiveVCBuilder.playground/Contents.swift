@@ -7,6 +7,43 @@ import PlaygroundSupport
 
 
 
+typealias UIButtonTargetClosure = (UIButton) -> ()
+
+class ClosureWrapper: NSObject {
+    let closure: UIButtonTargetClosure
+    init(_ closure: @escaping UIButtonTargetClosure) {
+        self.closure = closure
+    }
+}
+
+extension UIButton {
+    
+    private struct AssociatedKeys {
+        static var targetClosure = "targetClosure"
+    }
+    
+    private var targetClosure: UIButtonTargetClosure? {
+        get {
+            guard let closureWrapper = objc_getAssociatedObject(self, &AssociatedKeys.targetClosure) as? ClosureWrapper else { return nil }
+            return closureWrapper.closure
+        }
+        set(newValue) {
+            guard let newValue = newValue else { return }
+            objc_setAssociatedObject(self, &AssociatedKeys.targetClosure, ClosureWrapper(newValue), objc_AssociationPolicy.OBJC_ASSOCIATION_RETAIN_NONATOMIC)
+        }
+    }
+    
+    func addTargetClosure(closure: @escaping UIButtonTargetClosure) {
+        targetClosure = closure
+        addTarget(self, action: #selector(UIButton.closureAction), for: .touchUpInside)
+    }
+    
+    @objc func closureAction() {
+        guard let targetClosure = targetClosure else { return }
+        targetClosure(self)
+    }
+}
+
 
 // This is esentially a web browser built in native swift and UIKIt
 //Input in the following format:
@@ -21,15 +58,22 @@ import PlaygroundSupport
 // * actions may be saved as variables and passed into other actions only AFTER they are defined.
 // * each action occupies one line of the file
 
+public class InteractiveVC:UIViewController {
+    public var path:String?
+}
+
+
+
+
 public class VCBuilder {
     
     public static let validClasses = ["button","imageview","textlabel","slider","experation"]
-    public static func buildVC(text:String) throws -> UIViewController  {
+    public static func buildVC(text:String) throws -> InteractiveVC  {
         
         
         
         
-        let viewController = UIViewController()
+        let viewController = InteractiveVC()
         viewController.view.backgroundColor = UIColor.white
         var items = text.components(separatedBy: "\n")
         
@@ -52,7 +96,7 @@ public class VCBuilder {
                 label.font = UIFont.systemFont(ofSize: 20)
                 expiredVC.view.addSubview(label)
                 expiredVC.view.backgroundColor = UIColor.white
-                return expiredVC
+                return expiredVC as! InteractiveVC
             }
             else {
                 // NOT EXPIRED
@@ -161,12 +205,16 @@ public class VCBuilder {
         let changed = percent.replacingOccurrences(of: "%", with: "")
         let percentValue = CGFloat(Double(changed)!)/100
         let temp = UIViewController()
+        
+        //TODO: Get actual height
         return 660 * percentValue
     }
     public static func percentToPixelsHorizontal(percent:String) -> CGFloat {
         let changed = percent.replacingOccurrences(of: "%", with: "")
         let percentValue = CGFloat(Double(changed)!)/100
         let temp = UIViewController()
+        
+        //TODO: Get actual width
         return 375 * percentValue
     }
     
@@ -252,9 +300,9 @@ public class VCBuilder {
 
 public class AnimationRunner {
     private var processedActions = [Int:() -> ()]()
-    public static let validAnimations = ["moveAnimation","opacityAnimation","jointAction","removeAction","buttonTriggerAction","rotateAnimation"]
+    public static let validAnimations = ["moveAnimation","opacityAnimation","jointAction","removeAction","buttonTriggerAction","rotateAnimation","showViewController","dismissViewController"]
     
-    public func runActionsOn(vc:UIViewController,text:String) throws {
+    public func runActionsOn(vc:InteractiveVC,text:String) throws {
         let actions = text.components(separatedBy: "\n")
         
         
@@ -310,6 +358,18 @@ public class AnimationRunner {
                 case "buttonTriggerAction":
                     buildButtonTriggerAction(data:dictionary,vc:vc)
                     //Returns nil since it is just tethering an existing action to a button
+                case "showViewController":
+                    do {
+                        let action = try buildShowViewControllerAction(data: dictionary, vc: vc)
+                        processedActions[Int(dictionary["actionTag"]!)!] = action
+                        
+                    }
+                    catch {
+                        print("error building joint action")
+                    }
+                case "dismissViewController":
+                    let action = {vc.dismiss(animated: true, completion: nil)}
+                    processedActions[Int(dictionary["actionTag"]!)!] = action
                 default:
                     print("Invalid action")
                 }
@@ -332,7 +392,7 @@ public class AnimationRunner {
     private func buildMoveAnimationWithData(data:[String:String],vc:UIViewController) -> (() -> ()) {
         let animation = {
             let itemOfInterest = vc.view.viewWithTag(Int(data["elementTag"]!)!)!
-            UIView.animate(withDuration: Double(data["duration"]!)!, delay: 0, options: [UIViewAnimationOptions.curveLinear], animations: {
+            UIView.animate(withDuration: Double(data["duration"]!)!, delay: 0, options: [UIView.AnimationOptions.curveLinear], animations: {
                 var x:CGFloat = 0.0
                 if data["toX"]!.contains("%") {
                     x = VCBuilder.percentToPixelsHorizontal(percent: data["toX"]!)
@@ -439,6 +499,44 @@ public class AnimationRunner {
         catch {
             throw ActionBuildingError.ErrorBuildingAction
         }
+    }
+    
+    
+    
+    private func buildShowViewControllerAction(data:[String:String], vc: InteractiveVC) throws -> () -> () {
+        
+        let url = Bundle.main.url(forResource: "testTxt", withExtension: "txt")!
+        let actionsUrl = Bundle.main.url(forResource: "actions", withExtension: "txt")!
+        
+        
+        //let url = data["url"]!
+        let vcText = try String(contentsOf: url)
+        let actionText = try String(contentsOf: actionsUrl)
+        var viewController:InteractiveVC!
+        do {
+            viewController = try VCBuilder.buildVC(text: vcText)
+        }
+        catch {
+            print("Error building")
+        }
+        let actions = AnimationRunner()
+        
+        
+        
+        let action = {
+            vc.present(viewController, animated: true, completion: {
+                do {
+                    try actions.runActionsOn(vc: viewController, text: actionText)
+                }
+                catch {
+                    print("test")
+                }
+            })
+        }
+        
+        return action
+        
+        
     }
     
     private func buildRemoveAction(data:[String:String],vc:UIViewController) throws -> () -> () {
@@ -593,43 +691,6 @@ catch (let error) {
 
 
 
-
-typealias UIButtonTargetClosure = (UIButton) -> ()
-
-class ClosureWrapper: NSObject {
-    let closure: UIButtonTargetClosure
-    init(_ closure: @escaping UIButtonTargetClosure) {
-        self.closure = closure
-    }
-}
-
-extension UIButton {
-    
-    private struct AssociatedKeys {
-        static var targetClosure = "targetClosure"
-    }
-    
-    private var targetClosure: UIButtonTargetClosure? {
-        get {
-            guard let closureWrapper = objc_getAssociatedObject(self, &AssociatedKeys.targetClosure) as? ClosureWrapper else { return nil }
-            return closureWrapper.closure
-        }
-        set(newValue) {
-            guard let newValue = newValue else { return }
-            objc_setAssociatedObject(self, &AssociatedKeys.targetClosure, ClosureWrapper(newValue), objc_AssociationPolicy.OBJC_ASSOCIATION_RETAIN_NONATOMIC)
-        }
-    }
-    
-    func addTargetClosure(closure: @escaping UIButtonTargetClosure) {
-        targetClosure = closure
-        addTarget(self, action: #selector(UIButton.closureAction), for: .touchUpInside)
-    }
-    
-    @objc func closureAction() {
-        guard let targetClosure = targetClosure else { return }
-        targetClosure(self)
-    }
-}
 
 
 
