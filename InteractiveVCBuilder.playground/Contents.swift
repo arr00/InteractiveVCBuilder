@@ -9,6 +9,59 @@ import PlaygroundSupport
 
 typealias UIButtonTargetClosure = (UIButton) -> ()
 
+
+public class InteractiveVCBlocks {
+    public var actionsText:String? // url will be rootUrl + /actionsText
+    public var viewsText:String? // url will be rootUrl + /viewsText
+    private var rootUrl:String?
+    
+    public init(rootUrl:String) {
+        self.rootUrl = rootUrl
+    }
+    
+    public func buildVC() throws -> InteractiveVC  {
+        if actionsText == nil || viewsText == nil {
+            throw VCBuildingError.ConstuctionFileEmpty
+        }
+        do {
+            let vc = try VCBuilder.buildVC(text: self.viewsText!)
+            let actionRunner = ActionRunner()
+            try actionRunner.runActionsOn(vc: vc, text: self.actionsText!)
+            return vc
+            
+        }
+        
+        
+    }
+    
+    public func fetchData(closure:@escaping (Bool) -> ()) {
+        if rootUrl != nil {
+            let urlViews = rootUrl! + "/viewsText.txt"
+            let urlActions = rootUrl! + "/actionsText.txt"
+            guard let url1 = URL(string: urlViews) else {return}
+            guard let url2 = URL(string: urlActions) else {return}
+            
+            do {
+                let text = try String(contentsOf: url1)
+                let text2 = try String(contentsOf: url2)
+                viewsText = text
+                actionsText = text2
+                closure(true)
+            }
+            catch {
+                print("Error fetching text. Internet connection probably broken or invalid url")
+                closure(false)
+            }
+            
+        }
+        else {
+            closure(false)
+        }
+        // Fetch data here
+        
+    }
+}
+
 class ClosureWrapper: NSObject {
     let closure: UIButtonTargetClosure
     init(_ closure: @escaping UIButtonTargetClosure) {
@@ -68,6 +121,9 @@ public class InteractiveVC:UIViewController {
 public class VCBuilder {
     
     public static let validClasses = ["button","imageview","textlabel","slider","experation"]
+
+    
+    
     public static func buildVC(text:String) throws -> InteractiveVC  {
         
         
@@ -298,10 +354,14 @@ public class VCBuilder {
     }
 }
 
-public class AnimationRunner {
+public class ActionRunner {
     private var processedActions = [Int:() -> ()]()
-    public static let validAnimations = ["moveAnimation","opacityAnimation","jointAction","removeAction","buttonTriggerAction","rotateAnimation","showViewController","dismissViewController"]
+    public static let validActions = ["moveAnimation","opacityAnimation","jointAction","removeAction","buttonTriggerAction","rotateAnimation","showViewController","dismissViewController"]
     
+    
+    public func prepareToRunActionsOn(vc:InteractiveVC,text:String) throws {
+        
+    }
     public func runActionsOn(vc:InteractiveVC,text:String) throws {
         let actions = text.components(separatedBy: "\n")
         
@@ -320,7 +380,7 @@ public class AnimationRunner {
         for action in actions {
             let value = action.components(separatedBy: "=")
             
-            if AnimationRunner.validAnimations.contains(value[0]) {
+            if ActionRunner.validActions.contains(value[0]) {
                 let input = value[1]
                 guard let dictionary = try? input.buildDictionary() else {
                     throw VCBuildingError.InvalidDictionaryFormat(message: "Issue building dictionary from input")
@@ -502,42 +562,50 @@ public class AnimationRunner {
     }
     
     
-    
+    // Require:
+    // * actionTag
+    // * url (root url of dvc to show)
     private func buildShowViewControllerAction(data:[String:String], vc: InteractiveVC) throws -> () -> () {
+        let url = data["url"]!
         
-        let url = Bundle.main.url(forResource: "testTxt", withExtension: "txt")!
-        let actionsUrl = Bundle.main.url(forResource: "actions", withExtension: "txt")!
-        
-        
-        //let url = data["url"]!
-        let vcText = try String(contentsOf: url)
-        let actionText = try String(contentsOf: actionsUrl)
-        var viewController:InteractiveVC!
-        do {
-            viewController = try VCBuilder.buildVC(text: vcText)
+        var thisVc:InteractiveVC?
+        let vcBlock = InteractiveVCBlocks(rootUrl: url)
+        vcBlock.fetchData { (success) in
+            if success {
+                do {
+                    thisVc = try testBlock.buildVC()
+                }
+                catch {
+                    print("Error building vc")
+                }
+            }
+            else {
+                print("Error fetching")
+            }
+            
         }
-        catch {
+        
+        if thisVc == nil {
             print("Error building")
+            // Incorrect error message
+            throw VCBuildingError.MissingEntries
+            
         }
-        let actions = AnimationRunner()
-        
+        else {
+            print("All good proceed")
+        }
         
         
         let action = {
-            vc.present(viewController, animated: true, completion: {
-                do {
-                    try actions.runActionsOn(vc: viewController, text: actionText)
-                }
-                catch {
-                    print("test")
-                }
-            })
+            vc.present(thisVc!, animated: true)
         }
         
         return action
         
         
     }
+    
+    
     
     private func buildRemoveAction(data:[String:String],vc:UIViewController) throws -> () -> () {
         guard let itemOfInterest = vc.view.viewWithTag(Int(data["elementTag"]!)!) else {
@@ -558,6 +626,7 @@ public enum VCBuildingError:Error {
     case InvalidClass
     case MissingEntries
     case InvalidDictionaryFormat(message:String?)
+    case ConstuctionFileEmpty
 }
 public enum ButtonBuildingError:Error {
     case MissingEntries
@@ -663,7 +732,27 @@ extension String {
 }
 
 
+let testBlock = InteractiveVCBlocks.init(rootUrl: "http://agapps.xyz/dvc/test1")
+testBlock.fetchData { (success) in
+    print(success)
+    if success {
+        do {
+            let vc = try testBlock.buildVC()
+            PlaygroundPage.current.liveView = vc
+        }
+        catch {
+            print("Error building vc")
+        }
+    }
+    else {
+        print("Error fetching")
+    }
+    
+}
 
+
+
+/*
 
 let url = Bundle.main.url(forResource: "testTxt", withExtension: "txt")!
 let actionsUrl = Bundle.main.url(forResource: "actions", withExtension: "txt")!
@@ -675,7 +764,7 @@ do {
     
     
     if vc.title != "EXPIRED" {
-        let actionRunner = AnimationRunner()
+        let actionRunner = ActionRunner()
         try actionRunner.runActionsOn(vc: vc, text: actionText)
     }
     
@@ -687,7 +776,7 @@ do {
 catch (let error) {
     print("Error, \(error.localizedDescription)")
     
-}
+}*/
 
 
 
