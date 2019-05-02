@@ -26,7 +26,8 @@ public class InteractiveVCBlocks {
         do {
             let vc = try VCBuilder.buildVC(text: self.viewsText!)
             let actionRunner = ActionRunner()
-            try actionRunner.runActionsOn(vc: vc, text: self.actionsText!)
+            
+            try actionRunner.runActionsOn(vc: vc, text: actionsText!)
             return vc
             
         }
@@ -566,14 +567,19 @@ public class ActionRunner {
     // * actionTag
     // * url (root url of dvc to show)
     private func buildShowViewControllerAction(data:[String:String], vc: InteractiveVC) throws -> () -> () {
+        
+        print("Building show view controller")
+        print(data)
         let url = data["url"]!
+        
+        
         
         var thisVc:InteractiveVC?
         let vcBlock = InteractiveVCBlocks(rootUrl: url)
         vcBlock.fetchData { (success) in
             if success {
                 do {
-                    thisVc = try testBlock.buildVC()
+                    thisVc = try vcBlock.buildVC()
                 }
                 catch {
                     print("Error building vc")
@@ -752,8 +758,8 @@ testBlock.fetchData { (success) in
 
 
 
-/*
 
+/*
 let url = Bundle.main.url(forResource: "testTxt", withExtension: "txt")!
 let actionsUrl = Bundle.main.url(forResource: "actions", withExtension: "txt")!
 do {
